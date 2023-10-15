@@ -9,12 +9,20 @@
     - [3.1.1. Simple types](#311-simple-types)
     - [3.1.2. Complex types](#312-complex-types)
   - [3.2. Outputting attributes](#32-outputting-attributes)
-- [4. Provisioning software](#4-provisioning-software)
-- [5. Scenarios](#5-scenarios)
-- [6. Packer](#6-packer)
-- [7. DevOps using terraform](#7-devops-using-terraform)
-- [8. CDK Terraform](#8-cdk-terraform)
-- [9. Commands](#9-commands)
+- [4. State](#4-state)
+  - [4.1. Collaboration](#41-collaboration)
+  - [4.2. Backend](#42-backend)
+  - [4.3. Resume](#43-resume)
+- [5. Datasources](#5-datasources)
+- [6. Template provider](#6-template-provider)
+- [7. Modules](#7-modules)
+- [8. Provisioning software](#8-provisioning-software)
+- [9. Scenarios](#9-scenarios)
+- [10. Packer](#10-packer)
+- [11. DevOps using terraform](#11-devops-using-terraform)
+- [12. CDK Terraform](#12-cdk-terraform)
+- [13. Command Overview](#13-command-overview)
+  - [13.1. Commands](#131-commands)
 
 # 1. What's Terraform?
 
@@ -195,7 +203,106 @@
 - You can populate the IP addresses in an **ansible host** file.
 - Or another possibility: execute a script (with attributes as argument) which will take care of a mapping of resource name and the IP address.
 
-# 4. Provisioning software
+# 4. State
+
+- Terraform keeps the **remote state** of the infrastructure.
+- It stores it in a file called **terraform.tfstate**.
+- There is also a backup of the previous state in **terraform.tfstate.backup**.
+- When you execute `terraform apply`, a new terraform.tfstate and backup is **written**.
+- This is how terraform **keeps track** of the **remote state**.
+  - If the remote state changes and you hit terraform apply again, terraform will make changes to meet the correct remote state again.
+  - Example: you terminate an instance that is managed by terraform, after terraform apply it will be started again.
+
+## 4.1. Collaboration
+
+- You can keep the terraform.tfstate in **version control** (git).
+- It gives you a **history** of your terraform.tfstate file (which is just a big JSON file).
+- It allows you to **collaborate** with other team members.
+  - Unfortunately you can get conflicts when 2 people work at the same time.
+- Local state works well in the beginning, but when you project becomes bigger, you might want to store your state **remote**.
+
+## 4.2. Backend
+
+- The **terraform state** can be saved remote, using the **backend** functionality in terraform.
+- The default is a **local backend** (the local terraform state file).
+- Other backends include:
+  - Amazon S3 (with a locking mechanism using Amazon DynamoDB).
+  - Consul (with locking).
+  - Terraform Enterprise (the commercial solution).
+- Using the backend functionality has definitely benefits:
+  - Working in a team: it allows for collaboration, the remote state will always be available for the whole team
+  - The state file is not stored locally. Possible sensitive information is now only stored in the remote state
+  - Some backends will enable remote operations. The terraform apply will then run completely remote.
+    - These are called the [enhanced backends](https://www.terraform.io/docs/backends/types/index.html).
+
+## 4.3. Resume
+
+- Using a **remote** store for the terraform state will ensure that you always have the **latest version** of the state
+- It avoids having to `commit` and `push` the terraform.tfstate to version control.
+- Terraform remote stores don’t always support **locking**.
+  - The documentation always mentions if locking is available for a remote store.
+  - Amazon S3 and consul support it.
+
+# 5. Datasources
+
+- For certain providers (like AWS), terraform provides datasources.
+- Datasources provide you with dynamic information.
+  - A lot of data is available by AWS in a structured format using their API.
+  - Terraform also exposes this information using data sources.
+- Examples:
+  - List of AMIs.
+  - List of availability Zones.
+- Another great example is the datasource that gives you all IP addresses in use by AWS.
+- This is great if you want to filter traffic based on an AWS region.
+  - Example: Allow all traffic from amazon instances in Europe.
+- Filtering traffic in AWS can be done using **Security Groups**.
+  - Incoming and outgoing traffic can be filtered by protocol, IP range, and port.
+  - Similar to iptables (linux) or a firewall appliance.
+- Example:
+
+  ```
+    data "aws_ip_ranges" "south_america_ec2" {
+      regions  = ["sa-east-1"]
+      services = ["ec2"]
+    }
+
+    resource "aws_security_group" "from_south_america" {
+      name = "from_south_america"
+
+      ingress {
+        from_port   = "443"
+        to_port     = "443"
+        protocol    = "tcp"
+        cidr_blocks = data.aws_ip_ranges.south_america_ec2.cidr_blocks
+      }
+      tags = {
+        CreateDate = data.aws_ip_ranges.south_america_ec2.create_date
+        SyncToken  = data.aws_ip_ranges.south_america_ec2.sync_token
+      }
+    }
+  ```
+
+# 6. Template provider
+
+- The template provider can help creating **customized configuration files**.
+- You can build **templates based on variables** from terraform resource attributes (e.g. a public IP address).
+- The result is a string that can be used as a variable in terraform:
+  - The string contains a template.
+  - Example: A configuration file.
+- Can be used to create generic templates or cloud init configs.
+- In AWS, you can pass commands that need to be executed when the instance starts for the first time.
+- In AWS this is called "user-data".
+- If you want to pass user-data that depends on other information in terraform (e.g. IP addresses), you can use the provider template.
+
+# 7. Modules
+
+- You can use modules to make your terraform more **organized**.
+- Use **third party** modules.
+  - Modules from github.
+- **Reuse** parts of your code.
+  - Example: To set up network in AWS - the Virtual Private Network (VPC).
+
+# 8. Provisioning software
 
 - There are 2 ways to provision software on your instances:
   1. You can build your own custom AMI and bundle your software with the image.
@@ -211,7 +318,7 @@
   - This can be automated in a workflow script.
   - There are 3rd party initiatives integrating **Ansible** with terraform.
 
-# 5. Scenarios
+# 9. Scenarios
 
 | Scenario                              | Description                                |
 | ------------------------------------- | ------------------------------------------ |
@@ -219,8 +326,10 @@
 | [Scenario_2](/Laboratory/Scenario_2/) | Provisioning software (like EC2 User Data) |
 | [Scenario_3](/Laboratory/Scenario_3/) | Provisioning Microsoft Windows Server      |
 | [Scenario_4](/Laboratory/Scenario_4/) | Outputting attributes                      |
+| [Scenario_5](/Laboratory/Scenario_5/) | Remote state using S3                      |
+| [Scenario_6](/Laboratory/Scenario_6/) | Example using Datasource                   |
 
-# 6. Packer
+# 10. Packer
 
 - Packer is a commandline tool that can build AWS AMIs based on templates.
 - Instead of installing the software after booting up an instance, you can create an AMI with all the necessary software on.
@@ -228,12 +337,16 @@
 - It's a common approach when you run a horizontally scaled app layer or a cluster of something.
 - It might not be very useful to do this on single instances that cannot be terminated (e.g. a database).
 
-# 7. DevOps using terraform
+# 11. DevOps using terraform
 
 - Terraform is a great fit in a DevOps minded organization.
 - Tools like Terraform and Packer can be used in the Software Development Lifecycle:
 
-# 8. CDK Terraform
+![SDLC](Images/SDLC.png)
+
+![DevOps using Terraform](Images/DevOpsUsingTerraform.png)
+
+# 12. CDK Terraform
 
 - CDKTF is a **new way to provisioning using terraform**.
 - Instead of writing code in .tf files using HCL (the HashiCorp Configuration Language), you can use a **programming language to write the provisioning code**.
@@ -250,7 +363,13 @@
   - They can add more logic to the code provisioning, by leveraging the existing tools of the programming language (conditionals, specific input/outputs, testing, abstractions).
 - CDKTF is based on the **same technology as the AWS Cloud Development Kit (AWS CDK)**.
 
-# 9. Commands
+# 13. Command Overview
+
+- Terraform is very much focussed on the **resource definitions**.
+- It has a **limited toolset** available to modify, import, create these resource definitions.
+  - Still, every new release there are new features coming out to make it easier to handle your resources.
+
+## 13.1. Commands
 
 - Try Terraform expressions at an interactive command prompt.
   - `terraform console`
@@ -262,7 +381,5 @@
   - `terraform destroy`
 - Show changes required by the current configuration.
   - `terraform plan`
-
-```
-
-```
+- Install or upgrade remote Terraform modules
+  - `terraform get`
