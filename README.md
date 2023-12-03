@@ -9,6 +9,16 @@
     - [3.1.1. Simple types](#311-simple-types)
     - [3.1.2. Complex types](#312-complex-types)
   - [3.2. Outputting attributes](#32-outputting-attributes)
+  - [3.3. Interpolation](#33-interpolation)
+    - [3.3.1. Variables](#331-variables)
+    - [3.3.2. Various](#332-various)
+    - [3.3.3. Math](#333-math)
+  - [3.4. Conditionals](#34-conditionals)
+  - [3.5. Functions](#35-functions)
+  - [3.6. Loops](#36-loops)
+  - [3.7. Project Structure](#37-project-structure)
+  - [3.8. Lock file](#38-lock-file)
+  - [3.9. Manipulating state](#39-manipulating-state)
 - [4. State](#4-state)
   - [4.1. Collaboration](#41-collaboration)
   - [4.2. Backend](#42-backend)
@@ -19,7 +29,7 @@
 - [8. Provisioning software](#8-provisioning-software)
 - [9. Scenarios](#9-scenarios)
 - [10. Packer](#10-packer)
-- [11. DevOps using terraform](#11-devops-using-terraform)
+- [11. DevOps using Terraform](#11-devops-using-terraform)
 - [12. CDK Terraform](#12-cdk-terraform)
 - [13. Command Overview](#13-command-overview)
   - [13.1. Commands](#131-commands)
@@ -54,14 +64,14 @@
 ## 3.1. Variables Types
 
 - Terraform variables were completely reworked for the terraform 0.12 release.
-- You can now have **more control over the variables**, and have **for and for-each loops**, which where not possible with earlier versions.
+- You can now have **more control over the variables**, and have **for and for-each loops**, which was not possible with earlier versions.
 - You don't have to specify the type in variables, but it's recommended.
 - Everything in one file is not great.
 - Use variables to **hide secrets**.
   - You don't want the AWS credentials in your git repository.
 - Use variables for elements that **might change**.
   - AMIs are different per region.
-- Use variables to make it yourself easier to reuse terraform files.
+- Use variables to make it easier to reuse terraform files.
 
 ### 3.1.1. Simple types
 
@@ -203,11 +213,118 @@
 - You can populate the IP addresses in an **ansible host** file.
 - Or another possibility: execute a script (with attributes as argument) which will take care of a mapping of resource name and the IP address.
 
+## 3.3. Interpolation
+
+- In Terraform, you can interpolate other values, using ${...}.
+- You can use simple math functions, refer to other variables, or use conditionals (if-else).
+
+### 3.3.1. Variables
+
+| Name            | Syntax                | Example                                                               |
+| --------------- | --------------------- | --------------------------------------------------------------------- |
+| String variable | var.name              | ${var.SOMETHING}                                                      |
+| Map variable    | var.MAP["key"]        | 1. ${var.AMIS["sa-east-1"]}<br>2. ${lookup(var.AMIS, var.AWS_REGION)} |
+| List variable   | var.LIST, var.LIST[i] | 1. ${var.subnets[i]}<br>2. ${join(",", var.subnets)}                  |
+
+### 3.3.2. Various
+
+| Name                | Syntax             | Example                                                                                   |
+| ------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| Outputs of a module | module.name.output | ${module.aws_vpc.vpcid}                                                                   |
+| Count information   | count.field        | When using the attribute count = number in a resource, we can use ${count.index}          |
+| Path information    | path.type          | path.cwd (current directory)<br>path.module (module path)<br>path.root (root module path) |
+| Meta information    | terraform.field    | terraform.env shows active workspace                                                      |
+
+### 3.3.3. Math
+
+| Integer       | Float         |
+| ------------- | ------------- |
+| Add (+)       | Add (+)       |
+| Subtract (-)  | Subtract (-)  |
+| Multiply (\*) | Multiply (\*) |
+| Divide (/)    | Divide (/)    |
+| Modulo (%)    |               |
+
+- For example: `${3 + 3 * 5}` results in 18.
+
+## 3.4. Conditionals
+
+- Interpolations may contain conditionals (if-else).
+- The syntax is:
+  - `condtional ? trueval : falseval`.
+- Example:
+
+  ```
+    resorce "aws_instance" "myinstance" {
+      [...]
+      count = "${var.env == "prod" ? 2 : 1}"
+    }
+  ```
+
+- The support operator are:
+  - Equality: == and !=
+  - Numerical comparison: >, <, >=, <=
+  - Boolean logic: &&, ||, unary !
+
+## 3.5. Functions
+
+- We can use built-in functions in your terraform resources.
+- The functions are called with the syntax `name(ar1, arg2, ...)` and wapped with `${...}`.
+  - For example `${file("mykey.pub")}` would read the contents of the public key file.
+- I'll go over some of the commonly used functions to get you an idea of what's available.
+  - It's best to use the reference documentation when you need to use a function.
+
+## 3.6. Loops
+
+- Starting with terraform 0.12 you can use `for` and `for_each` loops.
+- The for-loop features can help you to **loop over variables**, transform it, and output it in different formats.
+- For example:
+  - `[for s in ["this is a", "list"] : upper(s)]`
+  - You can loop over a list `[1, 2, 3, 4]` or even a map like `{ "key" = "value"}`.
+  - You can transform them by doing a calculation or a string operation.
+  - Then you can output them as a list of map.
+- **For loops** are typically used when assigning a value to an argument:
+- For example:
+  - `security_groups = ["sg-12345", "sg-312"]`
+    - This could be replaced by a for loop if you need to transform the input data.
+  - `Tags = { name = "resource name" }`
+    - This is a map which can be "hardcoded" or which can be the output of a for loop.
+
+## 3.7. Project Structure
+
+- When starting with terraform on **production environments**, you quickly realize that you need a **decent project structure**.
+- Ideally, you want to **separate your development and production environments** completely.
+  - What way, if you **always test terraform changes in development first**, mistakes will be caught before they can have a production impact.
+  - For complete isolation, it's best to **create multiple AWS accounts**, and use one account for dev, another for prod, and a third one for billing.
+  - **Splitting out terraform in multiple projects** will also **reduce the resources** that you'll need to manage during one `terraform apply`.
+
+![Project Structure](Images/ProjectStructure.png)
+
+## 3.8. Lock file
+
+- Starting with teraform 0.14, terraform will use a **provider dependency lockfile**.
+- The file is created when you enter `terraform init` and is called `.terraform.lock.hcl`.
+- This file tracks the versions of providers and modules.
+- The **lockfile** should be committed to git.
+- When commited to git, re-runs of terraform will use the **same provider/module versions you used** during execution (when terraform in ran by another members of your team, or using automation).
+- Terraform will also store checksums of the archive to be able to verify the checksum.
+
+## 3.9. Manipulating state
+
+- The command `terraform state` can be used to manipulate your terraform state file.
+- Here a few use cases when you will need to modify the state:
+  - When **upgrading** between versions, for example 0.11 -> 0.12 -> 0.13.
+  - When you want to **rename** a resource in terraform without recreating it.
+  - When you **change a key** in a **for_each**, but you don't want to recreat the resources.
+  - **Change position** of a resource in a **list** (resounrce[0], resource[1], ...).
+  - When you want to **stop managing** a resource but you don't want to destroy the resource (terraform state rm).
+  - When you want to show the attributes in the state of a resource (terraform state show).
+
 # 4. State
 
 - Terraform keeps the **remote state** of the infrastructure.
-- It stores it in a file called **terraform.tfstate**.
-- There is also a backup of the previous state in **terraform.tfstate.backup**.
+- It stores it in a file called `terraform.tfstate`.
+- There is also a backup of the previous state in `terraform.tfstate.backup`.
 - When you execute `terraform apply`, a new terraform.tfstate and backup is **written**.
 - This is how terraform **keeps track** of the **remote state**.
   - If the remote state changes and you hit terraform apply again, terraform will make changes to meet the correct remote state again.
@@ -215,15 +332,15 @@
 
 ## 4.1. Collaboration
 
-- You can keep the terraform.tfstate in **version control** (git).
-- It gives you a **history** of your terraform.tfstate file (which is just a big JSON file).
+- You can keep the `terraform.tfstate` in **version control** (git).
+- It gives you a **history** of your `terraform.tfstate` file (which is just a big JSON file).
 - It allows you to **collaborate** with other team members.
-  - Unfortunately you can get conflicts when 2 people work at the same time.
-- Local state works well in the beginning, but when you project becomes bigger, you might want to store your state **remote**.
+  - Unfortunately, you can get conflicts when 2 people work at the same time.
+- Local state works well in the beginning, but when your project becomes bigger, you might want to store your state **remote**.
 
 ## 4.2. Backend
 
-- The **terraform state** can be saved remote, using the **backend** functionality in terraform.
+- The **terraform state** can be saved remotely, using the **backend** functionality in terraform.
 - The default is a **local backend** (the local terraform state file).
 - Other backends include:
   - Amazon S3 (with a locking mechanism using Amazon DynamoDB).
@@ -232,27 +349,27 @@
 - Using the backend functionality has definitely benefits:
   - Working in a team: it allows for collaboration, the remote state will always be available for the whole team
   - The state file is not stored locally. Possible sensitive information is now only stored in the remote state
-  - Some backends will enable remote operations. The terraform apply will then run completely remote.
+  - Some backends will enable remote operations. The `terraform apply` will then run completely remote.
     - These are called the [enhanced backends](https://www.terraform.io/docs/backends/types/index.html).
 
 ## 4.3. Resume
 
-- Using a **remote** store for the terraform state will ensure that you always have the **latest version** of the state
-- It avoids having to `commit` and `push` the terraform.tfstate to version control.
+- Using a **remote** store for the Terraform state will ensure that you always have the **latest version** of the state
+- It avoids having to `commit` and `push` the `terraform.tfstate` to version control.
 - Terraform remote stores don’t always support **locking**.
   - The documentation always mentions if locking is available for a remote store.
   - Amazon S3 and consul support it.
 
 # 5. Datasources
 
-- For certain providers (like AWS), terraform provides datasources.
-- Datasources provide you with dynamic information.
+- For certain providers (like AWS), terraform provides **Datasources**.
+- **Datasources** provide you with dynamic information.
   - A lot of data is available by AWS in a structured format using their API.
   - Terraform also exposes this information using data sources.
 - Examples:
   - List of AMIs.
   - List of availability Zones.
-- Another great example is the datasource that gives you all IP addresses in use by AWS.
+- Another great example is the **Datasource** that gives you all IP addresses in use by AWS.
 - This is great if you want to filter traffic based on an AWS region.
   - Example: Allow all traffic from amazon instances in Europe.
 - Filtering traffic in AWS can be done using **Security Groups**.
@@ -286,17 +403,17 @@
 
 - The template provider can help creating **customized configuration files**.
 - You can build **templates based on variables** from terraform resource attributes (e.g. a public IP address).
-- The result is a string that can be used as a variable in terraform:
+- The result is a string that can be used as a variable in Terraform:
   - The string contains a template.
   - Example: A configuration file.
 - Can be used to create generic templates or cloud init configs.
 - In AWS, you can pass commands that need to be executed when the instance starts for the first time.
 - In AWS this is called "user-data".
-- If you want to pass user-data that depends on other information in terraform (e.g. IP addresses), you can use the provider template.
+- If you want to pass user-data that depends on other information in Terraform (e.g. IP addresses), you can use the provider template.
 
 # 7. Modules
 
-- You can use modules to make your terraform more **organized**.
+- You can use modules to make your Terraform more **organized**.
 - Use **third party** modules.
   - Modules from github.
 - **Reuse** parts of your code.
@@ -311,12 +428,12 @@
      - Using file uploads.
      - Using `remote-exec`.
      - Using automation tools like **Chef**, **Puppet**, **Ansible**.
-- **Current state** for terraform with automation (Q4 2016):
-  - Chef is integrated within terraform, you can add chef statements.
+- **Current state** for Terraform with automation (Q4 2016):
+  - Chef is integrated within Terraform, you can add chef statements.
   - You can run **puppet agent** using `remote-exec`.
 - For **Ansible**, you can first run terraform, and output the IP addresses, then run `ansible-playbook` on those hosts.
   - This can be automated in a workflow script.
-  - There are 3rd party initiatives integrating **Ansible** with terraform.
+  - There are 3rd party initiatives integrating **Ansible** with Terraform.
 
 # 9. Scenarios
 
@@ -331,13 +448,13 @@
 
 # 10. Packer
 
-- Packer is a commandline tool that can build AWS AMIs based on templates.
+- Packer is a **command line tool** that can build AWS AMIs based on templates.
 - Instead of installing the software after booting up an instance, you can create an AMI with all the necessary software on.
 - This can speed up boot times of instances
 - It's a common approach when you run a horizontally scaled app layer or a cluster of something.
 - It might not be very useful to do this on single instances that cannot be terminated (e.g. a database).
 
-# 11. DevOps using terraform
+# 11. DevOps using Terraform
 
 - Terraform is a great fit in a DevOps minded organization.
 - Tools like Terraform and Packer can be used in the Software Development Lifecycle:
@@ -348,7 +465,7 @@
 
 # 12. CDK Terraform
 
-- CDKTF is a **new way to provisioning using terraform**.
+- CDKTF is a **new way to provisioning using Terraform**.
 - Instead of writing code in .tf files using HCL (the HashiCorp Configuration Language), you can use a **programming language to write the provisioning code**.
   - Supported languages are currently:
     - TypeScript
@@ -356,16 +473,16 @@
     - Java
     - C#
     - GO.
-- In the same way you write application code, you can write code that **when executed with CDKTF, it will provision your infrastructure** (just like you are used to do with terraform apply).
-  - To do this, CDKTF will translate (synthesize) your application code into terraform files that can then be deployed by terraform.
-- Using CDKTF opens the way for developers to **write provisioning code** in **the same way as they develop their applicaiton**.
+- In the same way you write application code, you can write code that **when executed with CDKTF, it will provision your infrastructure** (just like you are used to do with `terraform apply`).
+  - To do this, CDKTF will translate (synthesize) your application code into Terraform files that can then be deployed by Terraform.
+- Using CDKTF opens the way for developers to **write provisioning code** in **the same way as they develop their application**.
   - They can use the same tools (like their IDE) to write provisioning code.
   - They can add more logic to the code provisioning, by leveraging the existing tools of the programming language (conditionals, specific input/outputs, testing, abstractions).
 - CDKTF is based on the **same technology as the AWS Cloud Development Kit (AWS CDK)**.
 
 # 13. Command Overview
 
-- Terraform is very much focussed on the **resource definitions**.
+- Terraform is very much focused on the **resource definitions**.
 - It has a **limited toolset** available to modify, import, create these resource definitions.
   - Still, every new release there are new features coming out to make it easier to handle your resources.
 
