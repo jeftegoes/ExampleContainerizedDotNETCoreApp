@@ -53,9 +53,13 @@
 
 - Spinning up an instance on AWS:
   - Open AWS Account.
-  - Create IAM admin `arn:aws:iam::aws:policy/AdministratorAccess `user.
-  - Create terraform file to spin up `t2.micro` instance.
-  - Run `terraform apply`.
+    - Create IAM admin `arn:aws:iam::aws:policy/AdministratorAccess `user.
+  - Terraform
+    - Download terraform [here](https://developer.hashicorp.com/terraform/install)
+    - Create a terraform file `(*.tf)` to spin up `t2.micro` instance like [this](/Laboratory/Scenario_1/instance.tf).
+    - Run `terraform init`.
+    - Run `terraform plan`.
+    - Run `terraform apply`.
 
 # 3. Terraform HCL - Basic
 
@@ -494,6 +498,7 @@
   - `terraform init`
 - Create or update infrastructure.
   - `terraform apply`
+  - `terraform apply -auto-approve`
 - Destroy previously-created infrastructure.
   - `terraform destroy`
 - Show changes required by the current configuration.
